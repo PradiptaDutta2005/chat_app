@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat App</title>
+</head>
+<body>
+
+<h2>Chat App</h2>
+
+<!-- USER -->
+<input id="name" placeholder="Your name"/>
+<button onclick="connect()">Connect</button>
+<br><br>
+
+<!-- CHAT -->
+<input id="receiver" placeholder="Receiver" oninput="loadHistory()"/>
+<input id="message" placeholder="Message"/>
+<button onclick="sendMessage()">Send</button>
+
+<ul id="chat"></ul>
+
+<!-- LIBRARIES -->
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
+<script>
+    let stompClient = null;
+    let username = "";
+
+    // 🔌 CONNECT
+    function connect() {
+
+        username = document.getElementById("name").value;
+
+        if (!username) {
+            alert("Enter name first!");
+            return;
+        }
+
+        let socket = new SockJS('/ws');
+        stompClient = Stomp.over(socket);
+
+        stompClient.connect({}, function () {
+
+            console.log("✅ CONNECTED as " + username);
+
+            // load old messages (if receiver already typed)
+            loadHistory();
+
+            // receive messages
+            stompClient.subscribe('/topic/messages', function (msg) {
+
+                let message = JSON.parse(msg.body);
+
+                console.log("📩 Received:", message);
+
+                // show only relevant messages
+                if (
+                    message.sender === username ||
+                    message.receiver === username
+                ) {
+                    let li = document.createElement("li");
+                    li.textContent = message.sender + ": " + message.content;
+                    document.getElementById("chat").appendChild(li);
+                }
+            });
+        });
+    }
+
+    // 📤 SEND MESSAGE
+    function sendMessage() {
+
+        if (!stompClient) {
+            alert("Not connected!");
+            return;
+        }
+
+        let receiver = document.getElementById("receiver").value;
+
+        if (!receiver) {
+            alert("Enter receiver!");
+            return;
+        }
+
+        let msg = {
+            sender: username,
+            receiver: receiver,
+            content: document.getElementById("message").value
+        };
+
+        console.log("📤 Sending:", msg);
+
+        stompClient.send("/app/private-message", {}, JSON.stringify(msg));
+
+        // show instantly
+        let li = document.createElement("li");
+        li.textContent = "You: " + msg.content;
+        document.getElementById("chat").appendChild(li);
+
+        // clear input
+        document.getElementById("message").value = "";
+
+        // reload history (sync with DB)
+        loadHistory();
+    }
+
+    // 📜 LOAD CHAT HISTORY
+    function loadHistory() {
+
+        let receiver = document.getElementById("receiver").value;
+
+        if (!receiver) return;
+
+        fetch(`/messages?user1=${username}&user2=${receiver}`)
+            .then(res => res.json())
+            .then(data => {
+
+                document.getElementById("chat").innerHTML = "";
+
+                data.forEach(msg => {
+                    let li = document.createElement("li");
+                    li.textContent = msg.sender + ": " + msg.content;
+                    document.getElementById("chat").appendChild(li);
+                });
+            });
+    }
+</script>
+
+</body>
+</html>
