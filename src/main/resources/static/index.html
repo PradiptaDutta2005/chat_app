@@ -7,9 +7,11 @@
 
 <h2>Chat App</h2>
 
-<!-- USER -->
-<input id="name" placeholder="Your name"/>
-<button onclick="connect()">Connect</button>
+<!-- 🔐 LOGIN -->
+<input id="name" placeholder="Username"/>
+<input id="password" placeholder="Password" type="password"/>
+<button onclick="login()">Login</button>
+
 <br><br>
 
 <!-- CHAT -->
@@ -19,23 +21,50 @@
 
 <ul id="chat"></ul>
 
-<!-- LIBRARIES -->
 <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
 
 <script>
     let stompClient = null;
     let username = "";
+    let token = "";
+
+    // 🔐 LOGIN FUNCTION
+    function login() {
+
+        username = document.getElementById("name").value;
+        let password = document.getElementById("password").value;
+
+        if (!username || !password) {
+            alert("Enter username and password");
+            return;
+        }
+
+        fetch("/auth/login", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                username: username,
+                password: password
+            })
+        })
+        .then(res => res.text())
+        .then(data => {
+
+            token = data;   // 🔥 store JWT
+            console.log("JWT:", token);
+
+            alert("Login successful!");
+
+            connect();  // 🔥 connect after login
+        })
+        .catch(() => alert("Login failed"));
+    }
 
     // 🔌 CONNECT
     function connect() {
-
-        username = document.getElementById("name").value;
-
-        if (!username) {
-            alert("Enter name first!");
-            return;
-        }
 
         let socket = new SockJS('/ws');
         stompClient = Stomp.over(socket);
@@ -44,17 +73,12 @@
 
             console.log("✅ CONNECTED as " + username);
 
-            // load old messages (if receiver already typed)
             loadHistory();
 
-            // receive messages
             stompClient.subscribe('/topic/messages', function (msg) {
 
                 let message = JSON.parse(msg.body);
 
-                console.log("📩 Received:", message);
-
-                // show only relevant messages
                 if (
                     message.sender === username ||
                     message.receiver === username
@@ -88,41 +112,40 @@
             content: document.getElementById("message").value
         };
 
-        console.log("📤 Sending:", msg);
-
         stompClient.send("/app/private-message", {}, JSON.stringify(msg));
 
-        // show instantly
         let li = document.createElement("li");
         li.textContent = "You: " + msg.content;
         document.getElementById("chat").appendChild(li);
 
-        // clear input
         document.getElementById("message").value = "";
 
-        // reload history (sync with DB)
         loadHistory();
     }
 
-    // 📜 LOAD CHAT HISTORY
+    // 📜 LOAD HISTORY
     function loadHistory() {
 
         let receiver = document.getElementById("receiver").value;
 
         if (!receiver) return;
 
-        fetch(`/messages?user1=${username}&user2=${receiver}`)
-            .then(res => res.json())
-            .then(data => {
+        fetch(`/messages?user1=${username}&user2=${receiver}`, {
+            headers: {
+                "Authorization": "Bearer " + token   // 🔥 attach JWT
+            }
+        })
+        .then(res => res.json())
+        .then(data => {
 
-                document.getElementById("chat").innerHTML = "";
+            document.getElementById("chat").innerHTML = "";
 
-                data.forEach(msg => {
-                    let li = document.createElement("li");
-                    li.textContent = msg.sender + ": " + msg.content;
-                    document.getElementById("chat").appendChild(li);
-                });
+            data.forEach(msg => {
+                let li = document.createElement("li");
+                li.textContent = msg.sender + ": " + msg.content;
+                document.getElementById("chat").appendChild(li);
             });
+        });
     }
 </script>
 
